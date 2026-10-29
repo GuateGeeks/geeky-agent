@@ -310,3 +310,43 @@ test('cancellation before response acknowledgement cannot revive playback during
  h.pc.channel.event({type:'output_audio_buffer.started',response_id:'old'});assert.equal(activities(h).at(-1),'thinking');
  await h.client.disconnect();
 });
+
+test('failed responses classify safe error codes without exposing provider data',async()=>{
+ const cases=[
+  [{code:'rate_limit_exceeded'},'rate_limit',/Espera un momento/],
+  [{code:'insufficient_quota',type:'rate_limit_error'},'quota',/cuota/],
+  [{code:'context_length_exceeded'},'context_length',/Cierra y vuelve a abrir/],
+  [{type:'server_error'},'service',/temporal/],
+  [{code:'private-unknown-code',type:'private-unknown-type'},'unknown',/no pudo completar/]
+ ];
+ for(const [details,code,copy] of cases){
+  const h=harness();await h.client.connect();await h.client.sendText('hola');
+  h.pc.channel.event({type:'response.done',response:{id:'private-response-id',status:'failed',status_details:{error:{...details,message:'SECRET raw transcript sk-private'}},output:[]}});await tick();
+  const error=h.events.filter(e=>e.type==='error').at(-1);
+  assert.equal(error.code,code);assert.match(error.message,copy);
+  assert.deepEqual(Object.keys(error).sort(),['code','message','type']);
+  assert.doesNotMatch(JSON.stringify(error),/SECRET|sk-private|private-|transcript/);
+  assert.equal(h.pc.channel.sent.filter(e=>e.type==='response.create').length,1,'failure never retries automatically');
+  await h.client.disconnect();
+ }
+});
+test('failed partial calls never execute and a later user turn remains usable',async()=>{
+ const h=harness();let executions=0;
+ const client=createRealtimeClient({endpoint:'/session',executeTool:()=>{executions++;return {ok:true};},onEvent:e=>h.events.push(e)});
+ await client.connect();await client.sendText('agregar spike prime');const pc=h.pc;
+ const call={type:'function_call',response_id:'failed',call_id:'partial',name:'update_cotizador',arguments:'{}'};
+ pc.channel.event({type:'response.function_call_arguments.done',...call});
+ pc.channel.event({type:'response.done',response:{id:'failed',status:'failed',status_details:{error:{code:'rate_limit_exceeded'}},output:[call]}});await tick();
+ assert.equal(executions,0);assert(!pc.channel.sent.some(e=>e.item?.type==='function_call_output'));
+ await client.sendText('consultar propuesta');assert.equal(pc.channel.sent.filter(e=>e.type==='response.create').length,2);
+ pc.channel.event({type:'response.done',response:{id:'next',status:'completed',output:[]}});await tick();
+ assert.equal(h.events.filter(e=>e.type==='activity').at(-1).state,'idle');assert.equal(executions,0);await client.disconnect();
+});
+test('top-level provider failures use the same safe classification',async()=>{
+ const h=harness();await h.client.connect();await h.client.sendText('hola');
+ const request=h.pc.channel.sent.find(e=>e.type==='response.create');
+ h.pc.channel.event({type:'error',error:{code:'rate_limit_exceeded',event_id:request.event_id,message:'SECRET sk-private'}});
+ const error=h.events.filter(e=>e.type==='error').at(-1);
+ assert.equal(error.code,'rate_limit');assert.match(error.message,/Espera un momento/);assert.doesNotMatch(JSON.stringify(error),/SECRET|sk-private|event_id/);
+ await h.client.sendText('otra');assert.equal(h.pc.channel.sent.filter(e=>e.type==='response.create').length,2);await h.client.disconnect();
+});

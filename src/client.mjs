@@ -1,5 +1,16 @@
 import { MAX_TEXT_LENGTH, TOOL_NAMES } from './protocol.mjs';
 
+// Expose only fixed categories and copy; provider details may contain private input.
+function providerFailure(error, fallback) {
+ const values=[error?.code,error?.type];
+ let code='unknown',message=fallback;
+ if(values.includes('insufficient_quota')){code='quota';message='El servicio del asistente no tiene cuota disponible. Puedes continuar con el formulario.';}
+ else if(values.some(value=>['rate_limit_exceeded','rate_limit_error'].includes(value))){code='rate_limit';message='El asistente alcanzó un límite temporal de uso. Espera un momento antes de volver a intentarlo.';}
+ else if(values.includes('context_length_exceeded')){code='context_length';message='La conversación es demasiado larga. Cierra y vuelve a abrir el chat para continuar.';}
+ else if(values.some(value=>['server_error','internal_error','service_unavailable'].includes(value))){code='service';message='El servicio del asistente tuvo un fallo temporal. Puedes intentarlo de nuevo en un momento.';}
+ return {type:'error',code,message};
+}
+
 // Browser transport only. All commercial decisions and validation belong to executeTool.
 export function createRealtimeClient({endpoint,executeTool,onEvent = ()=>{},connectionTimeoutMs = 20000} = {}) {
  if(typeof endpoint!=='string'||!endpoint.trim()) throw new TypeError('Configura el endpoint del asistente.');
@@ -99,7 +110,7 @@ export function createRealtimeClient({endpoint,executeTool,onEvent = ()=>{},conn
   try {
    for(const item of response.output||[]) if(item.type==='message'&&item.role==='assistant')
     for(const [index,part] of (item.content||[]).entries()) if(typeof (part.text??part.transcript)==='string') message(s,item.id,'assistant',part.text??part.transcript,true,index);
-   if(response.status==='failed') emit({type:'error',message:'El asistente no pudo completar su respuesta. Intenta de nuevo.'});
+   if(response.status==='failed') emit(providerFailure(response.status_details?.error,'El asistente no pudo completar su respuesta. Intenta de nuevo.'));
    if(response.status && response.status!=='completed')return;
    for(const call of calls){
     if(!alive(s))return;
@@ -134,7 +145,7 @@ export function createRealtimeClient({endpoint,executeTool,onEvent = ()=>{},conn
    const ownCancel=s.cancelRequests.delete(e.error?.event_id);
    if(ownCancel && e.error?.code==='response_cancel_not_active')return;
    if(s.updateWait && e.error?.event_id===s.updateWait.id)s.updateWait.reject(new Error('El asistente rechazó la configuración.'));
-   emit({type:'error',message:'El asistente encontró un error. Intenta de nuevo.'});
+   emit(providerFailure(e.error,'El asistente encontró un error. Intenta de nuevo.'));
    // A rejected response.create has no response.done. Release only its unacknowledged request.
    if(s.responseRequestId && e.error?.event_id===s.responseRequestId){s.active=false;s.responseRequestId=null;pump(s);activity(s);}return;
   }
