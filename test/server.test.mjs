@@ -43,3 +43,14 @@ test('upstream timeout returns promptly',async()=>{
  const h=await setup({upstreamTimeoutMs:10,fetchImpl:async(_url,{signal})=>new Promise((_,reject)=>signal.addEventListener('abort',()=>reject(new Error('secret'))))});
  try{const r=await fetch(h.url,{method:'POST',headers:{Origin:origin,'Content-Type':'application/sdp'},body:'v=0'});assert.equal(r.status,504);}finally{await h.close();}
 });
+
+test('key provider is lazy, bypassed for invalid requests and used only server-side',async()=>{
+ let secretCalls=0,upstreamCalls=0;
+ const h=await setup({apiKey:'',apiKeyProvider:async()=>{secretCalls++;return 'unit-test-only-value';},fetchImpl:async(_url,init)=>{upstreamCalls++;assert.equal(init.headers.Authorization,'Bearer unit-test-only-value');return new Response('v=0');}});
+ try{
+  assert.equal(secretCalls,0);
+  assert.equal((await fetch(h.url,{method:'POST',headers:{Origin:origin,'Content-Type':'application/sdp'},body:'invalid'})).status,400);assert.equal(secretCalls,0);
+  const response=await fetch(h.url,{method:'POST',headers:{Origin:origin,'Content-Type':'application/sdp'},body:'v=0'});
+  assert.equal(response.status,200);assert.equal(await response.text(),'v=0');assert.equal(secretCalls,1);assert.equal(upstreamCalls,1);
+ }finally{await h.close();}
+});

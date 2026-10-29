@@ -1,10 +1,10 @@
 # Geeky Agent
 
-A dependency-free Node 22 session endpoint and reusable browser WebRTC client for GuateGeeks' Spanish quotation assistant. The host owns its commercial engine, validation, revision checks and undo. This repository owns the OpenAI connection and four fixed function-tool envelopes.
+A Node 22+ session endpoint and reusable browser WebRTC client for GuateGeeks' Spanish quotation assistant. The host owns its commercial engine, validation, revision checks and undo. This repository owns the OpenAI connection and four fixed function-tool envelopes.
 
 ## Local setup
 
-1. Install Node 22. No runtime packages are required.
+1. Install Node 22 or later, then run `npm ci`. The pinned AWS SDK dependency supports execution-role secret retrieval for the optional AWS deployment.
 2. Copy `.env.example` to `.env` and set a server-side `OPENAI_API_KEY`. Never put the key in frontend configuration.
 3. Set `ALLOWED_ORIGINS` to the exact origins serving your UI, separated by commas. Defaults allow `http://127.0.0.1:8087` and `http://localhost:8087`.
 4. Run `npm start`. The endpoint listens on `127.0.0.1:8787/session`.
@@ -54,6 +54,14 @@ The host's `executeTool(name,args)` returns a JSON-serializable result:
 - `undo_cotizador({expectedRevision})`: revision-safe undo.
 
 The server envelope enumerates permitted actions while argument shapes come from current host context. The model is instructed to read context before changing the quote, use engine results, respect conflicts and never invent prices or services. Host validation, rather than model instruction alone, enforces these rules. No commercial calculations belong here.
+
+## AWS deployment
+
+Lambda Web Functions use native Node.js 24 HTTP startup through the root `index.js`, reading `AWS_LAMBDA_HTTP_ENDPOINT`; no event-handler adapter is used. Package installed production dependencies with the source. The server starts listening before any Secrets Manager request. Follow [AWS deployment](docs/aws-deployment.md) for packaging, the execution role, regions, public endpoint controls and frontend configuration.
+
+Set `OPENAI_API_KEY_SECRET_ID` to a secret containing the raw API key or a JSON object with `OPENAI_API_KEY`. The execution role needs `secretsmanager:GetSecretValue` for this secret (and `kms:Decrypt` when its customer-managed key requires it). `OPENAI_API_KEY_SECRET_REGION` optionally overrides `AWS_REGION`. This AWS entrypoint reads the secret using role credentials and never loads a frontend key. Successful retrieval is cached for five minutes, concurrent retrieval is deduplicated, failures pause retries for one second, and retrieval has a hard three-second deadline. Binary secrets are unsupported. Local `npm start` retains the direct server environment-key workflow.
+
+`GET /health` returns only `{"ok":true}` to indicate HTTP readiness; it does not query AWS, validate OpenAI access or expose configuration. A secret retrieval failure returns a generic 503 on `/session`.
 
 ## Deployment and access controls
 

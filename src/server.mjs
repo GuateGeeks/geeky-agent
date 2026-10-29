@@ -4,7 +4,7 @@ import { sessionConfig } from './protocol.mjs';
 
 const DEFAULT_ORIGINS = ['http://127.0.0.1:8087','http://localhost:8087'];
 export function createAgentServer({
- apiKey = process.env.OPENAI_API_KEY || '',
+ apiKey = process.env.OPENAI_API_KEY || '', apiKeyProvider = null,
  model = process.env.OPENAI_REALTIME_MODEL || 'gpt-realtime-2.1',
  allowedOrigins = (process.env.ALLOWED_ORIGINS || DEFAULT_ORIGINS.join(',')).split(','),
  maxBodyBytes = 65536, upstreamTimeoutMs = 20000, rateLimit = 10,
@@ -30,7 +30,7 @@ export function createAgentServer({
  const server = http.createServer(async(req,res)=>{
   res.setHeader('Cache-Control','no-store'); res.setHeader('X-Content-Type-Options','nosniff'); res.setHeader('Vary','Origin');
   const reply=(status,error)=>{ if(!res.destroyed && !res.writableEnded){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify({error}));} };
-  if(req.url!=='/session') return reply(404,'Endpoint no disponible.');
+  if(req.url==='/health' && req.method==='GET'){res.writeHead(200,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify({ok:true}));return;} if(req.url!=='/session') return reply(404,'Endpoint no disponible.');
   const origin=req.headers.origin;
   if(!origin || !origins.has(origin)) return reply(403,'Origen no permitido.');
   res.setHeader('Access-Control-Allow-Origin',origin);
@@ -43,7 +43,7 @@ export function createAgentServer({
   if(req.method!=='POST'){res.setHeader('Allow','POST, OPTIONS');return reply(405,'Método no permitido.');}
   if(!allowed(req.socket.remoteAddress)){res.setHeader('Retry-After',String(Math.ceil(rateWindowMs/1000)));return reply(429,'Demasiadas conexiones. Intenta más tarde.');}
   if((req.headers['content-type']||'').split(';')[0].trim().toLowerCase()!=='application/sdp') return reply(415,'Se requiere application/sdp.');
-  if(!apiKey) return reply(503,'El asistente no está configurado en el servidor.');
+  if(!apiKey && !apiKeyProvider) return reply(503,'El asistente no está configurado en el servidor.');
   if(concurrent>=maxConcurrent) return reply(503,'El asistente está ocupado. Intenta más tarde.');
   if(Number(req.headers['content-length'])>maxBodyBytes){res.setHeader('Connection','close');return reply(413,'Solicitud demasiado grande.');}
   let body='',size=0;
@@ -60,8 +60,8 @@ export function createAgentServer({
   const closed=()=>{if(!res.writableEnded) controller.abort();};
   res.once('close',closed);concurrent++;
   try {
-   const form=new FormData();form.set('sdp',body);form.set('session',JSON.stringify(sessionConfig(model)));
-   const upstream=await fetchImpl('https://api.openai.com/v1/realtime/calls',{method:'POST',headers:{Authorization:'Bearer '+apiKey},body:form,signal:controller.signal});
+   let key=apiKey; if(apiKeyProvider){try{key=await apiKeyProvider();}catch{return reply(503,'El asistente no está disponible.');}} if(!key || controller.signal.aborted)return reply(503,'El asistente no está disponible.'); const form=new FormData();form.set('sdp',body);form.set('session',JSON.stringify(sessionConfig(model)));
+   const upstream=await fetchImpl('https://api.openai.com/v1/realtime/calls',{method:'POST',headers:{Authorization:'Bearer '+key},body:form,signal:controller.signal});
    if(!upstream.ok){await upstream.body?.cancel();return reply(502,'No se pudo conectar con el asistente.');}
    // A successful SDP answer is bounded too. Never relay upstream diagnostic bodies.
    const reader=upstream.body?.getReader();let answer='',bytes=0;
