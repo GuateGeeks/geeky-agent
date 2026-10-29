@@ -187,3 +187,26 @@ test('late error for an acknowledged request cannot clear a running response',as
  h.pc.channel.event({type:'response.done',response:{id:'r1',output:[]}});await tick();
  assert.equal(h.pc.channel.sent.filter(e=>e.type==='response.create').length,2);await h.client.disconnect();
 });
+test('voice-off cancellation completing at the server is harmless and cannot release a newer response',async()=>{
+ const track={stop(){}},stream={getTracks:()=>[track],getAudioTracks:()=>[track]};
+ const h=harness({mic:async()=>stream});await h.client.connect();await h.client.setVoice(true);
+ await h.client.sendText('hola');h.pc.channel.event({type:'response.created',response:{id:'old'}});
+ await h.client.setVoice(false);
+ const cancel=h.pc.channel.sent.find(e=>e.type==='response.cancel');
+ assert.equal(typeof cancel.event_id,'string');
+ h.pc.channel.event({type:'response.done',response:{id:'old',status:'completed',output:[]}});await tick();
+ await h.client.sendText('otra');h.pc.channel.event({type:'response.created',response:{id:'new'}});
+ h.pc.channel.event({type:'error',error:{code:'response_cancel_not_active',event_id:cancel.event_id}});
+ assert.equal(h.events.filter(e=>e.type==='error').length,0);
+ await h.client.sendText('espera');
+ assert.equal(h.pc.channel.sent.filter(e=>e.type==='response.create').length,2);
+ h.pc.channel.event({type:'response.done',response:{id:'new',status:'completed',output:[]}});await tick();
+ assert.equal(h.pc.channel.sent.filter(e=>e.type==='response.create').length,3);
+ await h.client.disconnect();
+});
+test('unrelated cancellation errors remain visible',async()=>{
+ const h=harness();await h.client.connect();
+ h.pc.channel.event({type:'error',error:{code:'response_cancel_not_active',event_id:'unknown'}});
+ assert.equal(h.events.filter(e=>e.type==='error').length,1);
+ await h.client.disconnect();
+});
