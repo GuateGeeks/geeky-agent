@@ -37,7 +37,7 @@ aws lambda-web deploy \
   --env "OPENAI_API_KEY_SECRET_ID=$secret_arn" \
   --env OPENAI_API_KEY_SECRET_REGION=us-east-1 \
   --env ALLOWED_ORIGINS=https://guategeeks.com \
-  --env OPENAI_REALTIME_MODEL=gpt-realtime-2.1 \
+  --env OPENAI_REALTIME_MODEL=gpt-realtime-2.1-mini \
   --endpoint-name production \
   --endpoint-type HomeRegion \
   --auth-type ApplicationManaged \
