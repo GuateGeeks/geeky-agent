@@ -138,7 +138,7 @@ export function createRealtimeClient({endpoint,executeTool,onEvent = ()=>{},conn
     s.pc=new RTCPeerConnection();
     s.sender=s.pc.addTransceiver('audio',{direction:'sendrecv'}).sender;
     s.audio=new Audio();s.audio.autoplay=false;s.audio.muted=true;
-    s.pc.ontrack=event=>{if(!alive(s))return;s.remote=event.streams?.[0]||new MediaStream([event.track]);if(s.voice){s.audio.srcObject=s.remote;s.audio.play().catch(()=>emit({type:'error',message:'Activa la reproducción de audio en tu navegador.'}));}};
+    s.pc.ontrack=event=>{if(!alive(s))return;s.remote=event.streams?.[0]||new MediaStream([event.track]);if(s.voice){s.audio.srcObject=s.remote;s.audio.play().catch(()=>{if(alive(s)&&s.voice)emit({type:'error',message:'Activa la reproducción de audio en tu navegador.'});});}};
     s.pc.onconnectionstatechange=()=>{if(alive(s)&&['failed','closed'].includes(s.pc.connectionState)){failure('Se perdió la conexión con el asistente.');disconnect();}};
     s.dc=s.pc.createDataChannel('oai-events');
     const opened=new Promise((resolve,reject)=>{s.rejectOpen=reject;s.dc.onopen=resolve;s.dc.onerror=()=>reject(new Error('No se pudo abrir el canal del asistente.'));s.dc.onclose=()=>{if(alive(s)){failure('Se cerró la conexión con el asistente.');disconnect();}};});

@@ -156,3 +156,8 @@ test('reconnect starts a fresh conversation and emits user audio transcripts',as
  h.pc.channel.event({type:'conversation.item.input_audio_transcription.completed',item_id:'spoken',transcript:'dos grupos'});
  assert.deepEqual(h.events.filter(e=>e.type==='message').at(-1),{type:'message',id:'spoken',role:'user',text:'dos grupos',final:true});await h.client.disconnect();
 });
+test('late audio playback rejection after disconnect emits no stale error',async()=>{
+ const track={stop(){}},stream={getTracks:()=>[track],getAudioTracks:()=>[track]};const h=harness({mic:async()=>stream});await h.client.connect();await h.client.setVoice(true);
+ let rejectPlay;h.audio.play=()=>new Promise((_resolve,reject)=>{rejectPlay=reject;});h.pc.ontrack({streams:[stream],track});
+ await h.client.disconnect();const count=h.events.length;rejectPlay(new Error('autoplay denied'));await tick();assert.equal(h.events.length,count);
+});
