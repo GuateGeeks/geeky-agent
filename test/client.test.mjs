@@ -161,3 +161,29 @@ test('late audio playback rejection after disconnect emits no stale error',async
  let rejectPlay;h.audio.play=()=>new Promise((_resolve,reject)=>{rejectPlay=reject;});h.pc.ontrack({streams:[stream],track});
  await h.client.disconnect();const count=h.events.length;rejectPlay(new Error('autoplay denied'));await tick();assert.equal(h.events.length,count);
 });
+test('rejected response.create releases queued turns only for its matching event id',async()=>{
+ const h=harness();await h.client.connect();await h.client.sendText('primero');await h.client.sendText('segundo');
+ const first=h.pc.channel.sent.find(e=>e.type==='response.create');assert.equal(typeof first.event_id,'string');
+ h.pc.channel.event({type:'error',error:{code:'invalid_request_error',event_id:'unrelated'}});await tick();
+ assert.equal(h.pc.channel.sent.filter(e=>e.type==='response.create').length,1);
+ h.pc.channel.event({type:'error',error:{code:'rate_limit_exceeded',event_id:first.event_id}});await tick();
+ await h.client.sendText('reintento');
+ assert.equal(h.pc.channel.sent.filter(e=>e.type==='response.create').length,2);
+ assert.equal(h.pc.channel.sent.filter(e=>e.item?.type==='message').length,2,'next queued user item is sent after rejection');
+ await h.client.disconnect();
+});
+test('response.create error allows a later manual retry without reopening transport',async()=>{
+ const h=harness();await h.client.connect();await h.client.sendText('primero');
+ const first=h.pc.channel.sent.find(e=>e.type==='response.create');
+ h.pc.channel.event({type:'error',error:{code:'rate_limit_exceeded',event_id:first.event_id}});
+ await h.client.sendText('reintentar');assert.equal(h.pc.channel.sent.filter(e=>e.type==='response.create').length,2);
+ assert.equal(h.pc.channel.sent.filter(e=>e.item?.type==='message').length,2);await h.client.disconnect();
+});
+test('late error for an acknowledged request cannot clear a running response',async()=>{
+ const h=harness();await h.client.connect();await h.client.sendText('primero');
+ const first=h.pc.channel.sent.find(e=>e.type==='response.create');h.pc.channel.event({type:'response.created',response:{id:'r1'}});
+ h.pc.channel.event({type:'error',error:{event_id:first.event_id}});await h.client.sendText('segundo');
+ assert.equal(h.pc.channel.sent.filter(e=>e.type==='response.create').length,1);
+ h.pc.channel.event({type:'response.done',response:{id:'r1',output:[]}});await tick();
+ assert.equal(h.pc.channel.sent.filter(e=>e.type==='response.create').length,2);await h.client.disconnect();
+});

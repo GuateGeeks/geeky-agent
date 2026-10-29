@@ -48,8 +48,8 @@ export function createRealtimeClient({endpoint,executeTool,onEvent = ()=>{},conn
   for(const turn of s.turns.splice(0)) if(turn.text){
    send(s,{type:'conversation.item.create',item:{id:turn.id,type:'message',role:'user',content:[{type:'input_text',text:turn.text}]}});
   }
-  s.continue=false;s.active=true;
-  send(s,{type:'response.create',response:{output_modalities:[s.voice?'audio':'text']}});
+  s.continue=false;s.active=true;s.responseRequestId='response_'+(++sequence);
+  send(s,{type:'response.create',event_id:s.responseRequestId,response:{output_modalities:[s.voice?'audio':'text']}});
  }
  function updateSession(s,voice) {
   s.configuring++;
@@ -70,7 +70,7 @@ export function createRealtimeClient({endpoint,executeTool,onEvent = ()=>{},conn
   const response=event.response||{},id=response.id;
   if(id&&s.done.has(id))return;
   if(id){s.done.add(id);if(s.done.size>1000)s.done.delete(s.done.values().next().value);}
-  s.active=false;s.responseId=null;s.processing=true;
+  s.active=false;s.responseId=null;s.responseRequestId=null;s.processing=true;
   const calls=[...(response.output||[]).filter(item=>item.type==='function_call')];
   for(const call of s.pendingCalls.values()) if(call.response_id===id&&!calls.some(item=>item.call_id===call.call_id))calls.push(call);
   for(const call of calls)s.pendingCalls.delete(call.call_id);
@@ -109,9 +109,11 @@ export function createRealtimeClient({endpoint,executeTool,onEvent = ()=>{},conn
   if(e.type==='session.updated'){s.updateWait?.resolve();return;}
   if(e.type==='error'){
    if(s.updateWait && e.error?.event_id===s.updateWait.id)s.updateWait.reject(new Error('El asistente rechazó la configuración.'));
-   emit({type:'error',message:'El asistente encontró un error. Intenta de nuevo.'});return;
+   emit({type:'error',message:'El asistente encontró un error. Intenta de nuevo.'});
+   // A rejected response.create has no response.done. Release only its unacknowledged request.
+   if(s.responseRequestId && e.error?.event_id===s.responseRequestId){s.active=false;s.responseRequestId=null;pump(s);}return;
   }
-  if(e.type==='response.created'){s.active=true;s.responseId=e.response?.id;return;}
+  if(e.type==='response.created'){s.active=true;s.responseId=e.response?.id;s.responseRequestId=null;return;}
   if(e.type==='response.function_call_arguments.done'){
    if(e.call_id&&s.pendingCalls.size<100)s.pendingCalls.set(e.call_id,e);return;
   }
