@@ -12,6 +12,10 @@ A Node 22+ session endpoint and reusable browser WebRTC client for GuateGeeks' S
 
 `POST /session` accepts raw `application/sdp` and returns `application/sdp`. The server creates a multipart `sdp` + `session` request to OpenAI's `/v1/realtime/calls`; credentials never reach the browser. The default model is `gpt-realtime-2.1`; `OPENAI_REALTIME_MODEL` changes it explicitly. No session or transcript persistence exists here.
 
+## Conversation style
+
+Geeky answers the latest question directly in Spanish. By default, a turn uses one or two short sentences (up to 35 words across tool continuations). Context reads and tool calls stay silent; successful changes receive one concrete confirmation. It asks at most one necessary question and does not restart quotation onboarding after an unrelated question. Explicit requests for detail can receive longer answers; accuracy and relevant limitations take priority over brevity. This is model guidance, not a hard text/audio truncation limit.
+
 ## Host integration
 
 Serve or vendor both `src/client.mjs` and `src/protocol.mjs` together, preserving their relative paths and pinning a source commit. They are native browser ES modules.
@@ -38,7 +42,7 @@ Events are plain objects:
 - `{type:'message', id, role:'user'|'assistant', text, final:boolean}`: replace the text of the same id as it streams. The client emits the user's text once; the UI must not duplicate it. Render with textContent, never HTML.
 - `{type:'voice', enabled:boolean}`
 - `{type:'activity', state:'idle'|'listening'|'thinking'|'speaking'|'acting'}`: emitted only when activity changes (initial state is `idle`). `thinking` covers response generation and tool continuations; `acting` covers awaiting the host tool. With voice enabled, otherwise-idle activity is `listening`. `speaking` follows actual `output_audio_buffer.started/stopped/cleared` events and may outlast `response.done`; transcript deltas do not indicate playback. Voice off, interruption and disconnect clear playback activity immediately. Use separate `status` and `error` events for connection/error UI.
-- `{type:'error', message}`: safe user-facing text, no raw upstream errors.
+- `{type:'error', message, code?}`: safe user-facing text, no raw upstream errors. Failed responses and provider error events use fixed categories (`rate_limit`, `quota`, `context_length`, `service`, `unknown`) and Spanish guidance. No provider text, IDs or transcripts are included; failures never automatically retry quote mutations.
 - `{type:'action', name, result}`: one completed host-tool result.
 
 Connection and session-configuration acknowledgements have a 20-second timeout. Voice toggles serialize configuration updates; disabling voice invalidates pending microphone requests and stops late tracks. A silent send/receive audio transceiver is created even in text mode, allowing later microphone `replaceTrack` without SDP renegotiation. No microphone is acquired until explicit voice activation.
