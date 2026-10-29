@@ -14,7 +14,7 @@ A Node 22+ session endpoint and reusable browser WebRTC client for GuateGeeks' S
 
 ## Conversation style
 
-Geeky answers the latest question directly in Spanish. By default, a turn uses one or two short sentences (up to 35 words across tool continuations). Context reads and tool calls stay silent; successful changes receive one concrete confirmation. It asks at most one necessary question and does not restart quotation onboarding after an unrelated question. Explicit requests for detail can receive longer answers; accuracy and relevant limitations take priority over brevity. This is model guidance, not a hard text/audio truncation limit.
+Geeky answers the latest question directly in Spanish. By default, a turn uses one or two short sentences (up to 35 words across tool continuations). Context reads and tool calls stay silent; successful changes receive one concrete confirmation. It asks at most one necessary question and does not restart quotation onboarding after an unrelated question. Quotation intent in text or voice opens Proposal through the existing validated navigation tool before questions or edits, including an empty draft. General questions, campus exploration and explicit requests to stay on another view preserve that view. Explicit requests for detail can receive longer answers; accuracy and relevant limitations take priority over brevity. This is model guidance, not a hard text/audio truncation limit.
 
 ## Host integration
 
