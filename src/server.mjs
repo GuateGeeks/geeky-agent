@@ -5,7 +5,7 @@ import { sessionConfig } from './protocol.mjs';
 const DEFAULT_ORIGINS = ['http://127.0.0.1:8087','http://localhost:8087'];
 export function createAgentServer({
  apiKey = process.env.OPENAI_API_KEY || '', apiKeyProvider = null,
- model = process.env.OPENAI_REALTIME_MODEL || 'gpt-realtime-2.1',
+ model = process.env.OPENAI_REALTIME_MODEL || 'gpt-realtime-2.1-mini',
  allowedOrigins = (process.env.ALLOWED_ORIGINS || DEFAULT_ORIGINS.join(',')).split(','),
  maxBodyBytes = 65536, upstreamTimeoutMs = 20000, rateLimit = 10,
  rateWindowMs = 60000, globalRateLimit = 100, maxConcurrent = 20, fetchImpl = globalThis.fetch

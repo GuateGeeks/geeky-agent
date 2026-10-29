@@ -20,7 +20,7 @@ test('SDP exchange uses fixed tools and server-only model/key',async()=>{
  try {
  const response=await fetch(h.url,{method:'POST',headers:{Origin:origin,'Content-Type':'application/sdp'},body:'v=0\r\no=offer'});
  assert.equal(response.status,200);assert.match(await response.text(),/answer/);
- assert.equal(config.model,'gpt-realtime-2.1');
+ assert.equal(config.model,'gpt-realtime-2.1-mini');
  assert.deepEqual(config.tools.map(t=>t.name),['get_cotizador_context','update_cotizador','control_campus','undo_cotizador']);
  assert.equal(response.headers.get('access-control-allow-origin'),origin);
  }finally{await h.close();}

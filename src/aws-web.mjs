@@ -13,7 +13,7 @@ export function startWebFunction({env=process.env,apiKeyProvider}={}) {
  });
  const server=createAgentServer({
   apiKey:'',apiKeyProvider:provider,
-  model:env.OPENAI_REALTIME_MODEL || 'gpt-realtime-2.1',
+  model:env.OPENAI_REALTIME_MODEL || 'gpt-realtime-2.1-mini',
   ...(env.ALLOWED_ORIGINS ? {allowedOrigins:env.ALLOWED_ORIGINS.split(',')} : {})
  });
  server.listen(port,host);

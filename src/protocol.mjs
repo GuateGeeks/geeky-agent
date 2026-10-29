@@ -11,7 +11,7 @@ export const TOOLS = [
  {type:'function',name:'control_campus',description:'SILENT TOOL: call without any spoken or written preamble. Control the illustrative campus or Geeky. Read context for exact args/capabilities. Focus/camera do not change the quote.',parameters:object({action:{type:'string',enum:['focus','view','rotate','zoom','reset','pause','show','gesture']},args},['action','args'])},
  {type:'function',name:'undo_cotizador',description:'SILENT TOOL: call without any spoken or written preamble. Undo the last agent quote change if its revision still matches. Read context first.',parameters:object({expectedRevision:revision},['expectedRevision'])}
 ];
-export function sessionConfig(model = 'gpt-realtime-2.1') {
+export function sessionConfig(model = 'gpt-realtime-2.1-mini') {
  return {type:'realtime',model,output_modalities:['text'],
   instructions:`Eres Geeky, el asistente de GuateGeeks. Ayuda en español a configurar la propuesta y explorar el campus.
 # PREAMBLES: DISABLED

@@ -10,7 +10,7 @@ A Node 22+ session endpoint and reusable browser WebRTC client for GuateGeeks' S
 4. Run `npm start`. The endpoint listens on `127.0.0.1:8787/session`.
 5. Serve the host frontend on one allowed origin and configure its public endpoint URL, e.g. `http://127.0.0.1:8787/session`.
 
-`POST /session` accepts raw `application/sdp` and returns `application/sdp`. The server creates a multipart `sdp` + `session` request to OpenAI's `/v1/realtime/calls`; credentials never reach the browser. The default model is `gpt-realtime-2.1`; `OPENAI_REALTIME_MODEL` changes it explicitly. No session or transcript persistence exists here.
+`POST /session` accepts raw `application/sdp` and returns `application/sdp`. The server creates a multipart `sdp` + `session` request to OpenAI's `/v1/realtime/calls`; credentials never reach the browser. The default model is `gpt-realtime-2.1-mini`; `OPENAI_REALTIME_MODEL` changes it explicitly. No session or transcript persistence exists here.
 
 ## Conversation style
 
