@@ -13,6 +13,13 @@ export function createRealtimeClient({endpoint,executeTool,onEvent = ()=>{},conn
   if(!alive(s)||s.dc.readyState!=='open') throw new Error('El asistente está desconectado.');
   s.dc.send(JSON.stringify(event));
  };
+ function cancelResponse(s) {
+  if(!s.active)return;
+  const id='cancel_'+(++sequence);
+  s.cancelRequests.add(id);
+  if(s.cancelRequests.size>100)s.cancelRequests.delete(s.cancelRequests.values().next().value);
+  send(s,{type:'response.cancel',event_id:id});
+ }
  function silence(s) {
   s.voice=false;stop(s.mic);s.mic=null;
   if(s.audio){s.audio.muted=true;s.audio.pause();s.audio.srcObject=null;}
@@ -25,7 +32,7 @@ export function createRealtimeClient({endpoint,executeTool,onEvent = ()=>{},conn
   s.updateWait?.reject(new Error('Conexión cancelada.'));
   silence(s)?.catch(()=>{});
   s.dc?.close();s.pc?.close();
-  s.pendingCalls.clear();s.turns.length=0;s.messages.clear();
+  s.pendingCalls.clear();s.cancelRequests.clear();s.turns.length=0;s.messages.clear();
  }
  async function disconnect() {
   voiceVersion++;
@@ -108,6 +115,9 @@ export function createRealtimeClient({endpoint,executeTool,onEvent = ()=>{},conn
   let e;try{e=JSON.parse(event.data);}catch{return;}
   if(e.type==='session.updated'){s.updateWait?.resolve();return;}
   if(e.type==='error'){
+   // Completion can win a voice-off/interrupt cancellation. Ignore only our matching no-op.
+   const ownCancel=s.cancelRequests.delete(e.error?.event_id);
+   if(ownCancel && e.error?.code==='response_cancel_not_active')return;
    if(s.updateWait && e.error?.event_id===s.updateWait.id)s.updateWait.reject(new Error('El asistente rechazó la configuración.'));
    emit({type:'error',message:'El asistente encontró un error. Intenta de nuevo.'});
    // A rejected response.create has no response.done. Release only its unacknowledged request.
@@ -119,7 +129,7 @@ export function createRealtimeClient({endpoint,executeTool,onEvent = ()=>{},conn
   }
   if(e.type==='response.done'){finishResponse(s,e).catch(()=>{if(alive(s))emit({type:'error',message:'No se pudo completar la acción.'});});return;}
   if(e.type==='input_audio_buffer.speech_started'){
-   if(s.active)send(s,{type:'response.cancel'});
+   cancelResponse(s);
    send(s,{type:'output_audio_buffer.clear'});return;
   }
   if(e.type==='input_audio_buffer.committed'){if(s.voice){s.turns.push({});pump(s);}return;}
@@ -133,7 +143,7 @@ export function createRealtimeClient({endpoint,executeTool,onEvent = ()=>{},conn
   const requestedVoiceVersion=voiceVersion;
   if(connecting){await connecting;if(voice&&requestedVoiceVersion===voiceVersion)await setVoice(true);return;}
   if(session?.ready){if(voice)await setVoice(true);return;}
-  const s={abort:new AbortController(),ready:false,voice:false,active:false,processing:false,configuring:0,continue:false,turns:[],pendingCalls:new Map(),calls:new Set(),done:new Set(),messages:new Map()};
+  const s={abort:new AbortController(),ready:false,voice:false,active:false,processing:false,configuring:0,continue:false,turns:[],pendingCalls:new Map(),cancelRequests:new Set(),calls:new Set(),done:new Set(),messages:new Map()};
   session=s;emit({type:'status',status:'connecting'});
   const operation=(async()=>{
    try{
@@ -185,7 +195,7 @@ export function createRealtimeClient({endpoint,executeTool,onEvent = ()=>{},conn
   if(!enabled){
    const s=session;if(!s){emit({type:'voice',enabled:false});return;}
    const detached=silence(s);
-   if(s.ready){if(s.active)send(s,{type:'response.cancel'});send(s,{type:'output_audio_buffer.clear'});send(s,{type:'input_audio_buffer.clear'});}
+   if(s.ready){cancelResponse(s);send(s,{type:'output_audio_buffer.clear'});send(s,{type:'input_audio_buffer.clear'});}
    emit({type:'voice',enabled:false});
    await detached;
    if(alive(s)&&s.ready){await updateSession(s,false);pump(s);}
@@ -202,7 +212,7 @@ export function createRealtimeClient({endpoint,executeTool,onEvent = ()=>{},conn
    await s.sender.replaceTrack(stream.getAudioTracks()[0]);
    if(!alive(s)||version!==voiceVersion){stop(stream);await s.sender.replaceTrack(null);throw new Error();}
    s.mic=stream;
-   if(s.active)send(s,{type:'response.cancel'});
+   cancelResponse(s);
    await updateSession(s,true);
    if(!alive(s)||version!==voiceVersion){stop(stream);throw new Error();}
    s.voice=true;s.audio.muted=false;s.audio.srcObject=s.remote||null;
