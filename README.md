@@ -37,6 +37,7 @@ Events are plain objects:
 - `{type:'status', status:'connecting'|'connected'|'disconnected'}`
 - `{type:'message', id, role:'user'|'assistant', text, final:boolean}`: replace the text of the same id as it streams. The client emits the user's text once; the UI must not duplicate it. Render with textContent, never HTML.
 - `{type:'voice', enabled:boolean}`
+- `{type:'activity', state:'idle'|'listening'|'thinking'|'speaking'|'acting'}`: emitted only when activity changes (initial state is `idle`). `thinking` covers response generation and tool continuations; `acting` covers awaiting the host tool. With voice enabled, otherwise-idle activity is `listening`. `speaking` follows actual `output_audio_buffer.started/stopped/cleared` events and may outlast `response.done`; transcript deltas do not indicate playback. Voice off, interruption and disconnect clear playback activity immediately. Use separate `status` and `error` events for connection/error UI.
 - `{type:'error', message}`: safe user-facing text, no raw upstream errors.
 - `{type:'action', name, result}`: one completed host-tool result.
 
@@ -73,6 +74,6 @@ The endpoint logs no requests, transcripts, tool arguments, upstream errors or c
 
 ## Verification
 
-Run `npm test` (`node --test test/*.test.mjs`). Tests exercise HTTP/CORS/limits/redaction and mocked WebRTC: no-microphone text, acknowledgements, voice off, permission denial, connection timeouts, toggle/disconnect races, transcript aggregation, sequential/deduplicated tools and stale completions. Mocks verify lifecycle logic; they do not establish live model availability, microphone quality or real WebRTC interoperability. Perform a credentialed browser text/voice test before production rollout.
+Run `npm test` (`node --test test/*.test.mjs`). Tests exercise HTTP/CORS/limits/redaction and mocked WebRTC: no-microphone text, acknowledgements, voice off, permission denial, connection timeouts, toggle/disconnect races, transcript aggregation, sequential/deduplicated tools, activity transitions, audio playback after generation completes, interruptions and stale completions. Mocks verify lifecycle logic; they do not establish live model availability, microphone quality or real WebRTC interoperability. Perform a credentialed browser text/voice test before production rollout.
 
 Protocol references, consulted 2026-10-28: [OpenAI WebRTC guide](https://developers.openai.com/api/docs/guides/voice-webrtc) and [Realtime conversations](https://developers.openai.com/api/docs/guides/realtime-conversations).

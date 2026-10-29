@@ -210,3 +210,103 @@ test('unrelated cancellation errors remain visible',async()=>{
  assert.equal(h.events.filter(e=>e.type==='error').length,1);
  await h.client.disconnect();
 });
+const activities = h => h.events.filter(e=>e.type==='activity').map(e=>e.state);
+const microphone = () => {const track={stop(){}};return {getTracks:()=>[track],getAudioTracks:()=>[track]};};
+test('activity changes from text thinking to idle without duplicate deltas',async()=>{
+ const h=harness();await h.client.connect();await h.client.sendText('hola');
+ assert.deepEqual(activities(h),['thinking']);
+ h.pc.channel.event({type:'response.created',response:{id:'r'}});
+ h.pc.channel.event({type:'response.output_text.delta',item_id:'m',delta:'hola'});
+ assert.deepEqual(activities(h),['thinking']);
+ h.pc.channel.event({type:'response.done',response:{id:'r',status:'completed',output:[]}});await tick();
+ assert.deepEqual(activities(h),['thinking','idle']);await h.client.disconnect();
+});
+test('voice activity follows playback buffers even after response completion',async()=>{
+ const h=harness({mic:async()=>microphone()});await h.client.connect();await h.client.setVoice(true);
+ assert.deepEqual(activities(h),['listening']);await h.client.sendText('hola');
+ h.pc.channel.event({type:'response.created',response:{id:'r'}});
+ h.pc.channel.event({type:'response.output_audio_transcript.delta',item_id:'m',delta:'hola'});
+ assert.equal(activities(h).at(-1),'thinking');
+ h.pc.channel.event({type:'output_audio_buffer.started',response_id:'r'});
+ assert.equal(activities(h).at(-1),'speaking');
+ h.pc.channel.event({type:'response.done',response:{id:'r',status:'completed',output:[]}});await tick();
+ assert.equal(activities(h).at(-1),'speaking');
+ h.pc.channel.event({type:'output_audio_buffer.stopped',response_id:'r'});
+ assert.equal(activities(h).at(-1),'listening');await h.client.disconnect();
+});
+test('activity remains acting during asynchronous tools then thinking through continuation',async()=>{
+ const h=harness();let release;
+ const client=createRealtimeClient({endpoint:'/session',onEvent:e=>h.events.push(e),executeTool:()=>new Promise(resolve=>{release=resolve;})});
+ await client.connect();await client.sendText('actúa');const pc=Peer.instances.at(-1);
+ pc.channel.event({type:'response.done',response:{id:'r',status:'completed',output:[{type:'function_call',call_id:'c',name:'get_cotizador_context',arguments:'{}'}]}});await tick();
+ assert.equal(activities(h).at(-1),'acting');release({ok:true});await tick();
+ assert.equal(activities(h).at(-1),'thinking');
+ pc.channel.event({type:'response.done',response:{id:'next',status:'completed',output:[]}});await tick();
+ assert.equal(activities(h).at(-1),'idle');await client.disconnect();
+});
+test('interruption clears speaking immediately and stale playback cannot revive it',async()=>{
+ const h=harness({mic:async()=>microphone()});await h.client.connect();await h.client.setVoice(true);await h.client.sendText('hola');
+ h.pc.channel.event({type:'response.created',response:{id:'old'}});
+ h.pc.channel.event({type:'output_audio_buffer.started',response_id:'old'});
+ h.pc.channel.event({type:'input_audio_buffer.speech_started'});
+ assert.equal(activities(h).at(-1),'listening');
+ h.pc.channel.event({type:'output_audio_buffer.started',response_id:'old'});
+ h.pc.channel.event({type:'response.done',response:{id:'old',status:'cancelled',output:[]}});await tick();
+ assert.equal(activities(h).at(-1),'listening');await h.client.disconnect();
+});
+test('voice off and disconnect clear playback and suppress stale transport events',async()=>{
+ const h=harness({mic:async()=>microphone()});await h.client.connect();await h.client.setVoice(true);await h.client.sendText('hola');
+ h.pc.channel.event({type:'response.created',response:{id:'old'}});
+ h.pc.channel.event({type:'output_audio_buffer.started',response_id:'old'});
+ await h.client.setVoice(false);assert.equal(activities(h).at(-1),'idle');
+ h.pc.channel.event({type:'output_audio_buffer.started',response_id:'old'});
+ assert.equal(activities(h).at(-1),'idle');await h.client.disconnect();const count=h.events.length;
+ h.pc.channel.event({type:'response.created',response:{id:'late'}});
+ assert.equal(h.events.length,count);
+});
+test('rejected response request releases thinking and failed responses leave no stuck activity',async()=>{
+ const h=harness();await h.client.connect();await h.client.sendText('hola');
+ const request=h.pc.channel.sent.find(e=>e.type==='response.create');
+ h.pc.channel.event({type:'error',error:{event_id:request.event_id}});
+ assert.equal(activities(h).at(-1),'idle');await h.client.sendText('otra');
+ h.pc.channel.event({type:'response.done',response:{id:'r',status:'failed',output:[]}});await tick();
+ assert.equal(activities(h).at(-1),'idle');await h.client.disconnect();
+});
+test('closing a channel during a tool leaves activity idle after its late completion',async()=>{
+ const h=harness();let release;
+ const client=createRealtimeClient({endpoint:'/session',onEvent:e=>h.events.push(e),executeTool:()=>new Promise(resolve=>{release=resolve;})});
+ await client.connect();await client.sendText('actúa');const pc=Peer.instances.at(-1);
+ pc.channel.event({type:'response.done',response:{id:'r',output:[{type:'function_call',call_id:'c',name:'get_cotizador_context',arguments:'{}'}]}});await tick();
+ pc.channel.onclose();assert.equal(activities(h).at(-1),'idle');const count=h.events.length;
+ release({ok:true});await tick();assert.equal(h.events.length,count);
+});
+
+test('completed response can start playback late, but stopped playback cannot restart from stale events',async()=>{
+ const h=harness({mic:async()=>microphone()});await h.client.connect();await h.client.setVoice(true);await h.client.sendText('hola');
+ h.pc.channel.event({type:'response.created',response:{id:'r'}});
+ h.pc.channel.event({type:'response.done',response:{id:'r',status:'completed',output:[]}});await tick();
+ h.pc.channel.event({type:'output_audio_buffer.started',response_id:'r'});assert.equal(activities(h).at(-1),'speaking');
+ h.pc.channel.event({type:'output_audio_buffer.stopped',response_id:'r'});assert.equal(activities(h).at(-1),'listening');
+ h.pc.channel.event({type:'output_audio_buffer.started',response_id:'r'});assert.equal(activities(h).at(-1),'listening');
+ await h.client.disconnect();
+});
+test('cleared buffers return to thinking and old stop events cannot stop newer playback',async()=>{
+ const h=harness({mic:async()=>microphone()});await h.client.connect();await h.client.setVoice(true);await h.client.sendText('uno');
+ h.pc.channel.event({type:'response.created',response:{id:'old'}});
+ h.pc.channel.event({type:'output_audio_buffer.started',response_id:'old'});
+ h.pc.channel.event({type:'output_audio_buffer.cleared',response_id:'old'});assert.equal(activities(h).at(-1),'thinking');
+ h.pc.channel.event({type:'response.done',response:{id:'old',status:'completed',output:[]}});await tick();
+ await h.client.sendText('dos');h.pc.channel.event({type:'response.created',response:{id:'new'}});
+ h.pc.channel.event({type:'output_audio_buffer.started',response_id:'new'});
+ h.pc.channel.event({type:'output_audio_buffer.stopped',response_id:'old'});assert.equal(activities(h).at(-1),'speaking');
+ await h.client.disconnect();assert.equal(activities(h).at(-1),'idle');
+});
+test('cancellation before response acknowledgement cannot revive playback during the next turn',async()=>{
+ const h=harness({mic:async()=>microphone()});await h.client.connect();await h.client.setVoice(true);await h.client.sendText('uno');
+ h.pc.channel.event({type:'input_audio_buffer.speech_started'});
+ h.pc.channel.event({type:'response.done',response:{id:'old',status:'cancelled',output:[]}});await tick();
+ h.pc.channel.event({type:'input_audio_buffer.committed'});
+ h.pc.channel.event({type:'response.created',response:{id:'new'}});
+ h.pc.channel.event({type:'output_audio_buffer.started',response_id:'old'});assert.equal(activities(h).at(-1),'thinking');
+ await h.client.disconnect();
+});

@@ -4,7 +4,7 @@ import { MAX_TEXT_LENGTH, TOOL_NAMES } from './protocol.mjs';
 export function createRealtimeClient({endpoint,executeTool,onEvent = ()=>{},connectionTimeoutMs = 20000} = {}) {
  if(typeof endpoint!=='string'||!endpoint.trim()) throw new TypeError('Configura el endpoint del asistente.');
  if(typeof executeTool!=='function') throw new TypeError('Falta el adaptador de herramientas.');
- let session=null, connecting=null, voiceVersion=0, sequence=0;
+ let session=null, connecting=null, voiceVersion=0, sequence=0, activityState='idle';
  const emit = event => { try {onEvent(event);} catch {/* host listeners do not own transport lifecycle */} };
  const failure = message => {emit({type:'error',message});return new Error(message);};
  const alive = s => session===s && !s.abort.signal.aborted;
@@ -13,6 +13,19 @@ export function createRealtimeClient({endpoint,executeTool,onEvent = ()=>{},conn
   if(!alive(s)||s.dc.readyState!=='open') throw new Error('El asistente está desconectado.');
   s.dc.send(JSON.stringify(event));
  };
+ function activity(s) {
+  const state=!alive(s)?'idle':s.acting?'acting':s.playback?'speaking':(s.active&&!s.interrupted)||s.continue||s.processing?'thinking':s.voice?'listening':'idle';
+  if(state!==activityState){activityState=state;emit({type:'activity',state});}
+ }
+ function retirePlayback(s,id) {
+  if(!id)return;
+  s.silentResponses.add(id);
+  if(s.silentResponses.size>1000)s.silentResponses.delete(s.silentResponses.values().next().value);
+ }
+ function clearPlayback(s) {
+  for(const id of [s.responseId,s.playback])retirePlayback(s,id);
+  s.playback=null;s.interrupted=true;activity(s);
+ }
  function cancelResponse(s) {
   if(!s.active)return;
   const id='cancel_'+(++sequence);
@@ -21,7 +34,7 @@ export function createRealtimeClient({endpoint,executeTool,onEvent = ()=>{},conn
   send(s,{type:'response.cancel',event_id:id});
  }
  function silence(s) {
-  s.voice=false;stop(s.mic);s.mic=null;
+  s.voice=false;clearPlayback(s);stop(s.mic);s.mic=null;
   if(s.audio){s.audio.muted=true;s.audio.pause();s.audio.srcObject=null;}
   // replaceTrack(null) starts immediately; callers await it when connected.
   return s.sender?.replaceTrack(null);
@@ -37,7 +50,7 @@ export function createRealtimeClient({endpoint,executeTool,onEvent = ()=>{},conn
  async function disconnect() {
   voiceVersion++;
   const s=session;session=null;connecting=null;
-  if(s) cleanup(s);
+  if(s){cleanup(s);activity(s);}
   emit({type:'voice',enabled:false});emit({type:'status',status:'disconnected'});
  }
  function message(s,id,role,text,final,index=0,delta=false) {
@@ -55,7 +68,7 @@ export function createRealtimeClient({endpoint,executeTool,onEvent = ()=>{},conn
   for(const turn of s.turns.splice(0)) if(turn.text){
    send(s,{type:'conversation.item.create',item:{id:turn.id,type:'message',role:'user',content:[{type:'input_text',text:turn.text}]}});
   }
-  s.continue=false;s.active=true;s.responseRequestId='response_'+(++sequence);
+  s.continue=false;s.active=true;s.interrupted=false;s.responseRequestId='response_'+(++sequence);activity(s);
   send(s,{type:'response.create',event_id:s.responseRequestId,response:{output_modalities:[s.voice?'audio':'text']}});
  }
  function updateSession(s,voice) {
@@ -77,6 +90,7 @@ export function createRealtimeClient({endpoint,executeTool,onEvent = ()=>{},conn
   const response=event.response||{},id=response.id;
   if(id&&s.done.has(id))return;
   if(id){s.done.add(id);if(s.done.size>1000)s.done.delete(s.done.values().next().value);}
+  if(s.interrupted||(response.status&&response.status!=='completed'))retirePlayback(s,id);
   s.active=false;s.responseId=null;s.responseRequestId=null;s.processing=true;
   const calls=[...(response.output||[]).filter(item=>item.type==='function_call')];
   for(const call of s.pendingCalls.values()) if(call.response_id===id&&!calls.some(item=>item.call_id===call.call_id))calls.push(call);
@@ -96,7 +110,8 @@ export function createRealtimeClient({endpoint,executeTool,onEvent = ()=>{},conn
      if(!TOOL_NAMES.includes(call.name)||typeof call.arguments!=='string'||call.arguments.length>16384)throw new Error();
      const args=JSON.parse(call.arguments);
      if(!args||typeof args!=='object'||Array.isArray(args))throw new Error();
-     result=await executeTool(call.name,args);
+     s.acting=true;activity(s);
+     try{result=await executeTool(call.name,args);}finally{s.acting=false;}
      if(result===undefined)result={ok:false,error:'La herramienta no devolvió un resultado.'};
      // Check serializability before emitting or sending.
      JSON.stringify(result);
@@ -107,7 +122,7 @@ export function createRealtimeClient({endpoint,executeTool,onEvent = ()=>{},conn
    }
   }finally{
    s.processing=false;
-   if(alive(s)){s.continue ||= outputs>0;pump(s);}
+   if(alive(s)){s.continue ||= outputs>0;pump(s);activity(s);}
   }
  }
  function receive(s,event) {
@@ -121,15 +136,26 @@ export function createRealtimeClient({endpoint,executeTool,onEvent = ()=>{},conn
    if(s.updateWait && e.error?.event_id===s.updateWait.id)s.updateWait.reject(new Error('El asistente rechazó la configuración.'));
    emit({type:'error',message:'El asistente encontró un error. Intenta de nuevo.'});
    // A rejected response.create has no response.done. Release only its unacknowledged request.
-   if(s.responseRequestId && e.error?.event_id===s.responseRequestId){s.active=false;s.responseRequestId=null;pump(s);}return;
+   if(s.responseRequestId && e.error?.event_id===s.responseRequestId){s.active=false;s.responseRequestId=null;pump(s);activity(s);}return;
   }
-  if(e.type==='response.created'){s.active=true;s.responseId=e.response?.id;s.responseRequestId=null;return;}
+  if(e.type==='response.created'){
+   if(!s.active||s.done.has(e.response?.id)||s.silentResponses.has(e.response?.id))return;
+   s.responseId=e.response?.id;s.responseRequestId=null;activity(s);return;
+  }
+  if(e.type==='output_audio_buffer.started'){
+   if(s.voice&&!s.interrupted&&!s.silentResponses.has(e.response_id)){s.playback=e.response_id||true;activity(s);}return;
+  }
+  if(['output_audio_buffer.stopped','output_audio_buffer.cleared'].includes(e.type)){
+   retirePlayback(s,e.response_id||s.playback);
+   if(!e.response_id||s.playback===e.response_id){s.playback=null;activity(s);}return;
+  }
   if(e.type==='response.function_call_arguments.done'){
    if(e.call_id&&s.pendingCalls.size<100)s.pendingCalls.set(e.call_id,e);return;
   }
   if(e.type==='response.done'){finishResponse(s,e).catch(()=>{if(alive(s))emit({type:'error',message:'No se pudo completar la acción.'});});return;}
   if(e.type==='input_audio_buffer.speech_started'){
-   cancelResponse(s);
+   if(!s.voice)return;
+   clearPlayback(s);cancelResponse(s);
    send(s,{type:'output_audio_buffer.clear'});return;
   }
   if(e.type==='input_audio_buffer.committed'){if(s.voice){s.turns.push({});pump(s);}return;}
@@ -143,7 +169,7 @@ export function createRealtimeClient({endpoint,executeTool,onEvent = ()=>{},conn
   const requestedVoiceVersion=voiceVersion;
   if(connecting){await connecting;if(voice&&requestedVoiceVersion===voiceVersion)await setVoice(true);return;}
   if(session?.ready){if(voice)await setVoice(true);return;}
-  const s={abort:new AbortController(),ready:false,voice:false,active:false,processing:false,configuring:0,continue:false,turns:[],pendingCalls:new Map(),cancelRequests:new Set(),calls:new Set(),done:new Set(),messages:new Map()};
+  const s={abort:new AbortController(),ready:false,voice:false,active:false,processing:false,acting:false,playback:null,interrupted:false,silentResponses:new Set(),configuring:0,continue:false,turns:[],pendingCalls:new Map(),cancelRequests:new Set(),calls:new Set(),done:new Set(),messages:new Map()};
   session=s;emit({type:'status',status:'connecting'});
   const operation=(async()=>{
    try{
@@ -217,7 +243,7 @@ export function createRealtimeClient({endpoint,executeTool,onEvent = ()=>{},conn
    if(!alive(s)||version!==voiceVersion){stop(stream);throw new Error();}
    s.voice=true;s.audio.muted=false;s.audio.srcObject=s.remote||null;
    if(s.remote)await s.audio.play();
-   emit({type:'voice',enabled:true});pump(s);
+   emit({type:'voice',enabled:true});pump(s);activity(s);
   }catch{
    stop(stream);if(alive(s)&&version===voiceVersion){await silence(s);emit({type:'voice',enabled:false});throw failure('No se pudo activar la voz. Puedes seguir escribiendo.');}
    throw new Error('Activación de voz cancelada.');
