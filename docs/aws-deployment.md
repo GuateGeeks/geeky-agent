@@ -45,13 +45,13 @@ aws lambda-web deploy \
   --timeout-seconds 30 \
   --max-concurrency-per-environment 20 \
   --max-environments 2 \
-  --rate-limit 2 \
+  --rate-limit 100 \
   --application-log-level INFO \
   --system-log-level INFO \
   --no-cli-pager
 ```
 
-These are initial deployment limits, not a guarantee of a fixed bill. Endpoint limits apply to bootstrap requests, not the length or token usage of an established OpenAI session. CORS is not authentication. This endpoint intentionally serves public visitors; evaluate shared edge abuse controls and monitor OpenAI usage before a broad public rollout. Never add request-body logging: SDP and transcripts should not be logged.
+AWS accepts a minimum nonzero endpoint rate of 100 requests per second. The application additionally limits each process to 100 bootstrap attempts per minute, 10 per socket IP per minute, and 20 concurrent upstream calls. These are initial deployment limits, not a guarantee of a fixed bill. Endpoint limits apply to bootstrap requests, not the length or token usage of an established OpenAI session. CORS is not authentication. This endpoint intentionally serves public visitors; evaluate shared edge abuse controls and monitor OpenAI usage before a broad public rollout. Never add request-body logging: SDP and transcripts should not be logged.
 
 The CLI returning an Active revision does not prove the server starts or that OpenAI accepts sessions. Verify HTTP behavior and a live browser session before connecting production traffic.
 
