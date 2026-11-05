@@ -26,3 +26,11 @@ test('el prompt fija el orden de construcción y prohíbe pedir identificadores 
  assert.match(instructions, /nunca se los pidas a la persona/);
  assert.match(instructions, /todavía no existe el programa, no pidas ningún identificador/);
 });
+
+test('el prompt indica la sección por defecto de cada grado y cómo agregar programas', () => {
+ assert.match(instructions, /ya trae una sección por defecto en groups/);
+ assert.match(instructions, /nunca digas que falta una sección/);
+ assert.match(instructions, /regístralo en cada grado de ese nivel/);
+ assert.match(instructions, /un add_program por programa/);
+ assert.match(instructions, /Nunca digas "restaurado"/);
+});
