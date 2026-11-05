@@ -34,3 +34,11 @@ test('el prompt indica la sección por defecto de cada grado y cómo agregar pro
  assert.match(instructions, /un add_program por programa/);
  assert.match(instructions, /Nunca digas "restaurado"/);
 });
+
+test('el prompt sincroniza la vista con el paso y fija el flujo de venta', () => {
+ assert.match(instructions, /1 Niveles, 2 Estudiantes, 3 Programas, 4 Personalizar \(modalidad\), 5 Resumen/);
+ assert.match(instructions, /ofrece un promedio por grado como opción/);
+ assert.match(instructions, /comprar \(INTEGRA\), rentar \(FLEX, por bimestres\) o pagar en cuotas \(EV8 u EV16\)/);
+ assert.match(instructions, /Mantén la vista sincronizada con el paso en curso/);
+ assert.doesNotMatch(instructions, /abre Propuesta automáticamente/);
+});
