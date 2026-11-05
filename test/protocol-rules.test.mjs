@@ -87,3 +87,9 @@ test('el prompt corrige invalid_arguments sin repetir la misma llamada y verific
  assert.match(instructions, /nunca repitas la misma llamada idéntica/);
  assert.match(instructions, /compara el contexto devuelto: confirma solo los grados cuyo students ya tiene la cifra pedida/);
 });
+
+test('el prompt hace que Geeky siga context.guide y las pistas de error del cotizador', () => {
+ assert.match(instructions, /GUÍA DEL COTIZADOR: cada resultado de get_cotizador_context y de update_cotizador trae context\.guide con next/);
+ assert.match(instructions, /no avances a otra etapa \(por ejemplo, no agregues programas\) hasta que next lo indique/);
+ assert.match(instructions, /Si un resultado fallido trae hint, síguelo/);
+});
