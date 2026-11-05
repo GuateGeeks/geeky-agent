@@ -19,3 +19,26 @@ test('el prompt permite programas distintos por nivel y no extiende uno a otros 
  assert.match(instructions, /nunca lo extiendas a otros niveles por tu cuenta/);
  assert.doesNotMatch(instructions, /único grupo compatible/);
 });
+
+test('el prompt fija el orden de construcción y prohíbe pedir identificadores internos', () => {
+ assert.match(instructions, /1\) niveles; 2\) estudiantes por grado/);
+ assert.match(instructions, /sin matrícula no se puede agregar ningún programa/);
+ assert.match(instructions, /nunca se los pidas a la persona/);
+ assert.match(instructions, /todavía no existe el programa, no pidas ningún identificador/);
+});
+
+test('el prompt indica la sección por defecto de cada grado y cómo agregar programas', () => {
+ assert.match(instructions, /ya trae una sección por defecto en groups/);
+ assert.match(instructions, /nunca digas que falta una sección/);
+ assert.match(instructions, /regístralo en cada grado de ese nivel/);
+ assert.match(instructions, /un add_program por programa/);
+ assert.match(instructions, /Nunca digas "restaurado"/);
+});
+
+test('el prompt sincroniza la vista con el paso y fija el flujo de venta', () => {
+ assert.match(instructions, /1 Niveles, 2 Estudiantes, 3 Programas, 4 Personalizar \(modalidad\), 5 Resumen/);
+ assert.match(instructions, /ofrece un promedio por grado como opción/);
+ assert.match(instructions, /comprar \(INTEGRA\), rentar \(FLEX, por bimestres\) o pagar en cuotas \(EV8 u EV16\)/);
+ assert.match(instructions, /Mantén la vista sincronizada con el paso en curso/);
+ assert.doesNotMatch(instructions, /abre Propuesta automáticamente/);
+});
