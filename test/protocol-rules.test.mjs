@@ -14,9 +14,12 @@ test('el prompt fija los grados permitidos por programa y la recomendación de S
  assert.match(instructions, /outsideRecommended/);
 });
 
-test('el prompt permite programas distintos por nivel y no extiende uno a otros niveles', () => {
- assert.match(instructions, /Cada nivel puede llevar programas distintos o ninguno/);
- assert.match(instructions, /nunca lo extiendas a otros niveles por tu cuenta/);
+test('el prompt comparte el kit entre niveles en una sola entrada y no lo duplica por nivel', () => {
+ assert.match(instructions, /Un mismo kit se comparte entre niveles/);
+ assert.match(instructions, /Agrega cada programa UNA sola vez con add_program/);
+ assert.match(instructions, /Robot Master: grupos de primaria, básico y bachillerato en una sola acción/);
+ assert.match(instructions, /no lo separes tú por tu cuenta ni le propongas equipos distintos por nivel/);
+ assert.doesNotMatch(instructions, /nunca lo extiendas a otros niveles/);
  assert.doesNotMatch(instructions, /único grupo compatible/);
 });
 
@@ -86,4 +89,12 @@ test('el prompt corrige invalid_arguments sin repetir la misma llamada y verific
  assert.match(instructions, /si el resultado es invalid_arguments|Si el resultado es invalid_arguments/);
  assert.match(instructions, /nunca repitas la misma llamada idéntica/);
  assert.match(instructions, /compara el contexto devuelto: confirma solo los grados cuyo students ya tiene la cifra pedida/);
+});
+
+test('el prompt pregunta el reparto de grados entre kits de la misma área y comunica los equipos sugeridos', () => {
+ assert.match(instructions, /Cuando dos kits de la misma área puedan cubrir los mismos grados/);
+ assert.match(instructions, /la persona decide el reparto y tú lo preguntas una sola vez/);
+ assert.match(instructions, /sin repetir un grado en dos kits de robótica/);
+ assert.match(instructions, /comunica la cantidad de equipos sugerida que trae el contexto \(effectiveUnits\)/);
+ assert.match(instructions, /aumentarla o disminuirla con set_equipment; nunca la calcules tú/);
 });
