@@ -71,3 +71,19 @@ test('compatibilidad con producción: solo acciones que el cotizador publicado y
  assert.deepEqual(actions, ['set_levels','set_students','add_section','remove_section','add_program','remove_program','set_program_groups','set_schedule','set_equipment','set_modality','set_tax','set_projection','navigate','calculate']);
  assert.doesNotMatch(instructions, /set_level_students|excludeGradeIds/);
 });
+
+test('el sobre de update_cotizador exige expectedRevision y lo explica con un ejemplo', async () => {
+ const { TOOLS } = await import('../src/protocol.mjs');
+ const update = TOOLS.find(tool => tool.name === 'update_cotizador');
+ assert.deepEqual(update.parameters.required, ['action', 'args', 'expectedRevision']);
+ assert.match(update.description, /ALWAYS send the three top-level fields together: action, args and expectedRevision/);
+ assert.match(update.description, /"expectedRevision":4/);
+ assert.match(update.parameters.properties.expectedRevision.description, /REQUIRED/);
+});
+
+test('el prompt corrige invalid_arguments sin repetir la misma llamada y verifica la matrícula antes de confirmarla', () => {
+ assert.match(instructions, /lleva siempre los tres campos action, args y expectedRevision/);
+ assert.match(instructions, /si el resultado es invalid_arguments|Si el resultado es invalid_arguments/);
+ assert.match(instructions, /nunca repitas la misma llamada idéntica/);
+ assert.match(instructions, /compara el contexto devuelto: confirma solo los grados cuyo students ya tiene la cifra pedida/);
+});
