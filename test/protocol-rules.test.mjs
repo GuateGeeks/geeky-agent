@@ -30,7 +30,7 @@ test('el prompt fija el orden de construcción y prohíbe pedir identificadores 
 test('el prompt indica la sección por defecto de cada grado y cómo agregar programas', () => {
  assert.match(instructions, /ya trae una sección por defecto en groups/);
  assert.match(instructions, /nunca digas que falta una sección/);
- assert.match(instructions, /regístralo en TODOS los grados que tenga ese nivel/);
+ assert.match(instructions, /regístralo en TODOS los grados de ese nivel con UNA sola acción set_level_students/);
  assert.match(instructions, /un add_program por programa/);
  assert.match(instructions, /Nunca digas "restaurado"/);
 });
@@ -44,7 +44,7 @@ test('el prompt sincroniza la vista con el paso y fija el flujo de venta', () =>
 });
 
 test('el prompt aplica el promedio a todos los grados con acciones existentes, en serie, y pregunta la cifra cuando falta', () => {
- assert.match(instructions, /una acción set_students por grado/);
+ assert.match(instructions, /args levelId y students/);
  assert.match(instructions, /cada nivel \(preprimaria, primaria, básico, bachillerato\) con su propio número/);
  assert.match(instructions, /de una en una: espera cada resultado y usa la revisión que devuelve/);
  assert.match(instructions, /usa set_students solo en los grados que mencione/);
@@ -54,7 +54,7 @@ test('el prompt aplica el promedio a todos los grados con acciones existentes, e
 
 test('el prompt omite los grados que la institución no tiene y sigue con lo que indique la persona', () => {
  assert.match(instructions, /"no tenemos 6\.º primaria"/);
- assert.match(instructions, /no le agregues programas y sigue únicamente con los grados que la persona indique/);
+ assert.match(instructions, /omítelo pasando excludeGradeIds en la misma acción set_level_students/);
 });
 
 test('el prompt muestra solo lo permitido, no da totales parciales y deriva a WhatsApp', () => {
@@ -65,11 +65,11 @@ test('el prompt muestra solo lo permitido, no da totales parciales y deriva a Wh
  assert.match(instructions, /https:\/\/wa\.me\/50230044972/);
 });
 
-test('compatibilidad con producción: solo acciones que el cotizador publicado ya acepta', async () => {
+test('compatibilidad con el cotizador: set_level_students existe desde ?v=170 y no hay otras acciones nuevas', async () => {
  const { TOOLS } = await import('../src/protocol.mjs');
  const actions = TOOLS.find(tool => tool.name === 'update_cotizador').parameters.properties.action.enum;
- assert.deepEqual(actions, ['set_levels','set_students','add_section','remove_section','add_program','remove_program','set_program_groups','set_schedule','set_equipment','set_modality','set_tax','set_projection','navigate','calculate']);
- assert.doesNotMatch(instructions, /set_level_students|excludeGradeIds/);
+ assert.deepEqual(actions, ['set_levels','set_students','set_level_students','add_section','remove_section','add_program','remove_program','set_program_groups','set_schedule','set_equipment','set_modality','set_tax','set_projection','navigate','calculate']);
+ assert.match(instructions, /excludeGradeIds/);
 });
 
 test('el sobre de update_cotizador exige expectedRevision y lo explica con un ejemplo', async () => {
