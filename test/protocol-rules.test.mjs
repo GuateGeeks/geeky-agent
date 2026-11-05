@@ -19,3 +19,10 @@ test('el prompt permite programas distintos por nivel y no extiende uno a otros 
  assert.match(instructions, /nunca lo extiendas a otros niveles por tu cuenta/);
  assert.doesNotMatch(instructions, /único grupo compatible/);
 });
+
+test('el prompt fija el orden de construcción y prohíbe pedir identificadores internos', () => {
+ assert.match(instructions, /1\) niveles; 2\) estudiantes por grado/);
+ assert.match(instructions, /sin matrícula no se puede agregar ningún programa/);
+ assert.match(instructions, /nunca se los pidas a la persona/);
+ assert.match(instructions, /todavía no existe el programa, no pidas ningún identificador/);
+});
