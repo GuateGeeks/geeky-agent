@@ -90,3 +90,11 @@ test('el prompt corrige invalid_arguments sin repetir la misma llamada y verific
  assert.match(instructions, /nunca repitas la misma llamada idéntica/);
  assert.match(instructions, /compara el contexto devuelto: confirma solo los grados cuyo students ya tiene la cifra pedida/);
 });
+
+test('el prompt pregunta el reparto de grados entre kits de la misma área y comunica los equipos sugeridos', () => {
+ assert.match(instructions, /Cuando dos kits de la misma área puedan cubrir los mismos grados/);
+ assert.match(instructions, /la persona decide el reparto y tú lo preguntas una sola vez/);
+ assert.match(instructions, /sin repetir un grado en dos kits de robótica/);
+ assert.match(instructions, /comunica la cantidad de equipos sugerida que trae el contexto \(effectiveUnits\)/);
+ assert.match(instructions, /aumentarla o disminuirla con set_equipment; nunca la calcules tú/);
+});
