@@ -98,3 +98,10 @@ test('el prompt pregunta el reparto de grados entre kits de la misma área y com
  assert.match(instructions, /comunica la cantidad de equipos sugerida que trae el contexto \(effectiveUnits\)/);
  assert.match(instructions, /aumentarla o disminuirla con set_equipment; nunca la calcules tú/);
 });
+
+test('el prompt deja que add_program use los grados por defecto del cotizador y exige groupIds exactos cuando la persona indica grados', () => {
+ assert.match(instructions, /llama add_program SOLO con programId, sin groupIds/);
+ assert.match(instructions, /un solo kit para todos los niveles, grados recomendados y sin repetir grados entre kits de robótica/);
+ assert.match(instructions, /Si responde error no_free_groups/);
+ assert.match(instructions, /manda groupIds exactos con solo esos grados, uno por cada grado indicado y nunca todos/);
+});
