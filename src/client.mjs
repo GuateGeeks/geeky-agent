@@ -106,7 +106,7 @@ export function createRealtimeClient({endpoint,executeTool,onEvent = ()=>{},conn
   const calls=[...(response.output||[]).filter(item=>item.type==='function_call')];
   for(const call of s.pendingCalls.values()) if(call.response_id===id&&!calls.some(item=>item.call_id===call.call_id))calls.push(call);
   for(const call of calls)s.pendingCalls.delete(call.call_id);
-  let outputs=0;
+  let outputs=0,batchRevision=null; // revisión que dejó la última acción exitosa de ESTA respuesta
   try {
    for(const item of response.output||[]) if(item.type==='message'&&item.role==='assistant')
     for(const [index,part] of (item.content||[]).entries()) if(typeof (part.text??part.transcript)==='string') message(s,item.id,'assistant',part.text??part.transcript,true,index);
@@ -121,8 +121,12 @@ export function createRealtimeClient({endpoint,executeTool,onEvent = ()=>{},conn
      if(!TOOL_NAMES.includes(call.name)||typeof call.arguments!=='string'||call.arguments.length>16384)throw new Error();
      const args=JSON.parse(call.arguments);
      if(!args||typeof args!=='object'||Array.isArray(args))throw new Error();
+     // Varias llamadas de una misma respuesta se ejecutan en serie pero el modelo las arma con la misma revisión: la anterior de este lote ya la avanzó.
+     // Solo se adelanta a la revisión que devolvió una acción exitosa del propio lote; un cambio manual ajeno sigue provocando revision_conflict.
+     if(call.name==='update_cotizador'&&batchRevision!==null&&Number.isInteger(args.expectedRevision)&&args.expectedRevision<batchRevision)args.expectedRevision=batchRevision;
      s.acting=true;activity(s);
      try{result=await executeTool(call.name,args);}finally{s.acting=false;}
+     if(['update_cotizador','undo_cotizador'].includes(call.name)&&result&&result.ok===true&&Number.isInteger(result.revision))batchRevision=result.revision;
      if(result===undefined)result={ok:false,error:'La herramienta no devolvió un resultado.'};
      // Check serializability before emitting or sending.
      JSON.stringify(result);
