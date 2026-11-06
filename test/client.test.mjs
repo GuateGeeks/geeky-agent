@@ -350,3 +350,53 @@ test('top-level provider failures use the same safe classification',async()=>{
  assert.equal(error.code,'rate_limit');assert.match(error.message,/Espera un momento/);assert.doesNotMatch(JSON.stringify(error),/SECRET|sk-private|event_id/);
  await h.client.sendText('otra');assert.equal(h.pc.channel.sent.filter(e=>e.type==='response.create').length,2);await h.client.disconnect();
 });
+
+test('varias acciones de una misma respuesta encadenan la revisión que devuelve la anterior', async () => {
+  const h = harness(); await h.client.disconnect();
+  let revision = 8; const seen = [];
+  const client = createRealtimeClient({endpoint:'/session',onEvent:e=>h.events.push(e),executeTool:async(name,args)=>{
+    seen.push([name, args.expectedRevision]);
+    if(args.expectedRevision!==revision) return {ok:false,error:'revision_conflict',revision};
+    revision+=2; return {ok:true,revision};
+  }});
+  await client.connect(); const pc = Peer.instances.at(-1); await client.sendText('agrega dos kits');
+  const call = (n,rev) => ({type:'function_call',call_id:'b'+n,name:'update_cotizador',arguments:JSON.stringify({action:'add_program',args:{programId:'p'+n},expectedRevision:rev})});
+  pc.channel.event({type:'response.done',response:{id:'r9',output:[call(1,8),call(2,8),call(3,8)]}});
+  for(let i=0;i<8;i++) await tick();
+  assert.equal(JSON.stringify(seen), JSON.stringify([['update_cotizador',8],['update_cotizador',10],['update_cotizador',12]]), 'la 2.ª y la 3.ª usan la revisión que dejó la anterior');
+  const outputs = pc.channel.sent.filter(e=>e.type==='conversation.item.create'&&e.item.type==='function_call_output').map(e=>JSON.parse(e.item.output));
+  assert.equal(outputs.every(o=>o.ok===true), true);
+  await client.disconnect();
+});
+test('la revisión no se adelanta si la acción anterior falló ni entre respuestas distintas', async () => {
+  const h = harness(); await h.client.disconnect();
+  const seen = [];
+  const client = createRealtimeClient({endpoint:'/session',onEvent:e=>h.events.push(e),executeTool:async(name,args)=>{
+    seen.push(args.expectedRevision);
+    return args.action==='falla' ? {ok:false,error:'incompatible_group',revision:8} : {ok:true,revision:args.expectedRevision+2};
+  }});
+  await client.connect(); const pc = Peer.instances.at(-1); await client.sendText('prueba');
+  const call = (id,action,rev) => ({type:'function_call',call_id:id,name:'update_cotizador',arguments:JSON.stringify({action,args:{},expectedRevision:rev})});
+  pc.channel.event({type:'response.done',response:{id:'r1',output:[call('x1','falla',8),call('x2','ok',8)]}});
+  for(let i=0;i<8;i++) await tick();
+  assert.equal(JSON.stringify(seen), JSON.stringify([8,8]), 'tras un fallo no se modifica la revisión del siguiente');
+  seen.length = 0;
+  pc.channel.event({type:'response.done',response:{id:'r2',output:[call('y1','ok',20)]}});
+  for(let i=0;i<8;i++) await tick();
+  assert.equal(JSON.stringify(seen), JSON.stringify([20]), 'una respuesta nueva usa su propia revisión sin arrastrar la anterior');
+  await client.disconnect();
+});
+test('una revisión mayor que la del lote nunca se reduce y las llamadas sin expectedRevision no se tocan', async () => {
+  const h = harness(); await h.client.disconnect();
+  const seen = [];
+  const client = createRealtimeClient({endpoint:'/session',onEvent:e=>h.events.push(e),executeTool:async(name,args)=>{
+    seen.push(args.expectedRevision===undefined?'sin':args.expectedRevision);
+    return {ok:true,revision:10};
+  }});
+  await client.connect(); const pc = Peer.instances.at(-1); await client.sendText('prueba');
+  const call = (id,args) => ({type:'function_call',call_id:id,name:'update_cotizador',arguments:JSON.stringify(args)});
+  pc.channel.event({type:'response.done',response:{id:'r3',output:[call('z1',{action:'a',args:{},expectedRevision:8}),call('z2',{action:'b',args:{},expectedRevision:30}),call('z3',{action:'c',args:{}})]}});
+  for(let i=0;i<8;i++) await tick();
+  assert.equal(JSON.stringify(seen), JSON.stringify([8,30,'sin']));
+  await client.disconnect();
+});
